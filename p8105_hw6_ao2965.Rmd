@@ -97,3 +97,142 @@ bootstrap_estimates |>
   knitr::kable(digits = 4)
 ```
 
+* The distribution of r2 values is approximately normal and symmetric, centered around 0.91. This indicates that the linear regression model with tmin and prcp as predictors consistently explains a high proportion of the variance in tmax across bootstrap samples. The 95% confidence interval for r2 is (0.8945, 0.9279).
+
+* 
+
+# Problem 3
+### loading and cleaning data
+```{r}
+birthweight_df = 
+  read_csv("birthweight (1).csv") |> 
+  janitor::clean_names() |> 
+  mutate(
+    babysex = factor(babysex, levels = c(1, 2), labels = c("male", "female")),
+    frace = factor(frace, levels = c(1, 2, 3, 4, 8, 9), 
+                   labels = c("white", "black", "asian", "puerto_rican", "other", "unknown")),
+    malform = factor(malform, levels = c(0, 1), labels = c("absent", "present")),
+    mrace = factor(mrace, levels = c(1, 2, 3, 4, 8), 
+                   labels = c("white", "black", "asian", "puerto_rican", "other"))
+  )
+
+birthweight_df |> 
+  summarize(across(everything(), ~ sum(is.na(.)))) |> 
+  pivot_longer(everything(), names_to = "variable", values_to = "n_missing") |> 
+  filter(n_missing > 0)
+```
+## I built my regression model using a hypothesis-driven approach based on epidemiological knowledge about factors that influence birthweight. Here's my reasoning:
+
+### Predictors Selected:
+* bhead and blength: These are direct measures of infant size. Larger babies naturally weigh more, so these
+  variables capture the fundamental relationship between body dimensions and weight.
+* gaweeks: Gestational age determines fetal development time. Babies born earlier have less time for in-utero     
+  growth, resulting in lower birthweights. 
+* mrace: Mother's race to show racial differences in birthweight outcomes.
+* ppbmi: Mother's pre-pregnancy BMI reflects nutritional/health status
+* smoken: Smoking during pregnancy is a well-established risk factor for low birthweight
+
+### proposed model
+```{r}
+my_model = lm(bwt ~ bhead + blength + gaweeks + mrace + ppbmi + smoken, 
+              data = birthweight_df)
+
+my_model |> 
+  broom::tidy() |> 
+  knitr::kable(digits = 3)
+
+
+```
+
+## Residuals vs Fitted Values Plot
+```{r}
+birthweight_df |> 
+  add_predictions(my_model) |> 
+  add_residuals(my_model) |> 
+  ggplot(aes(x = pred, y = resid)) +
+  geom_point(alpha = 0.3) +
+  geom_hline(yintercept = 0, color = "red", linetype = "dashed") +
+  labs(
+    title = "Residuals vs Fitted Values for Proposed Model",
+    x = "Fitted Values (grams)",
+    y = "Residuals (grams)"
+  ) +
+  theme_minimal()
+```
+* The residual plot shows a random scatter.
+
+## Comparison Models and Cross-Validation
+```{r}
+cv_df = 
+  crossv_mc(birthweight_df, n = 100) |> 
+  mutate(
+    train = map(train, as_tibble),
+    test = map(test, as_tibble)
+  )
+
+cv_results = 
+  cv_df |> 
+  mutate(
+    # My proposed model
+    my_model = map(train, \(df) lm(bwt ~ bhead + blength + gaweeks + mrace + ppbmi + smoken, data = df)),
+    # Model 2: Length at birth and gestational age (main effects only)
+    model_length_ga = map(train, \(df) lm(bwt ~ blength + gaweeks, data = df)),
+    # Model 3: Head circumference, length, sex, and all interactions
+    model_interactions = map(train, \(df) lm(bwt ~ bhead * blength * babysex, data = df))
+  ) |> 
+  mutate(
+    rmse_my_model = map2_dbl(my_model, test, \(mod, df) rmse(model = mod, data = df)),
+    rmse_length_ga = map2_dbl(model_length_ga, test, \(mod, df) rmse(model = mod, data = df)),
+    rmse_interactions = map2_dbl(model_interactions, test, \(mod, df) rmse(model = mod, data = df))
+  )
+cv_results |> 
+  select(starts_with("rmse")) |> 
+  pivot_longer(
+    everything(),
+    names_to = "model",
+    values_to = "rmse",
+    names_prefix = "rmse_"
+  ) |> 
+  mutate(
+    model = fct_recode(model,
+      "My Model:\nbhead + blength + gaweeks +\nmrace + ppbmi + smoken" = "my_model",
+      "Length + Gestational Age" = "length_ga",
+      "Head × Length × Sex\n(all interactions)" = "interactions"
+    ),
+    model = fct_reorder(model, rmse)
+  ) |> 
+  ggplot(aes(x = model, y = rmse)) +
+  geom_violin() +
+  labs(
+    title = "Cross-Validated Prediction Error Comparison",
+    x = "Model",
+    y = "RMSE (grams)"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+cv_results |> 
+  select(starts_with("rmse")) |> 
+  pivot_longer(
+    everything(),
+    names_to = "model",
+    values_to = "rmse",
+    names_prefix = "rmse_"
+  ) |> 
+  group_by(model) |> 
+  summarize(
+    mean_rmse = mean(rmse),
+    sd_rmse = sd(rmse),
+    median_rmse = median(rmse)
+  ) |> 
+  arrange(mean_rmse) |> 
+  knitr::kable(digits = 2)
+```
+
+* My proposed model (bhead + blength + gaweeks + mrace + ppbmi + smoken) has its violin positioned lowest on the y-axis, centered around 280 grams. 
+* The interaction model (head × length × sex with all interactions) has its violin positioned slightly higher, centered around 290 grams. The shape is similar but shifted upward, meaning this model consistently produces slightly larger prediction errors than my proposed model. 
+* The simple model (length + gestational age only) has its violin positioned highest on the plot, centered around 330 grams. It is also wider than the other two violins, indicating greater variability in prediction error across cross-validation splits. This model is both less accurate and less stable.
+* The clear vertical separation between the three violins demonstrates that these differences in predictive performance are consistent, not due to random chance. My hypothesis-driven model, which combines infant physical measurements with maternal factors like race, pre-pregnancy BMI, and smoking, provides the best balance of accuracy and stability for predicting birthweight.
+
+
+
