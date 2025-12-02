@@ -1,0 +1,99 @@
+---
+title: "p8105_hw6_ao2965"
+author: "Alissa Shams Orchi"
+date: "2025-12-02"
+output: github_document
+---
+# Problem 2
+```{r setup, include=FALSE}
+library(tidyverse)
+library(p8105.datasets)
+library(modelr)
+
+set.seed(1)
+
+data("weather_df")
+central_park_df = 
+  weather_df |> 
+  filter(name == "CentralPark_NY")
+```
+
+## Generating 5000 bootstrap samples
+```{r}
+boot_results = 
+  central_park_df |> 
+  modelr::bootstrap(n = 5000) |> 
+  mutate(
+    models = map(strap, \(df) lm(tmax ~ tmin + prcp, data = df)),
+    glance_results = map(models, broom::glance),
+    tidy_results = map(models, broom::tidy)
+  )
+```
+
+## Extracting the two quantities
+```{r}
+boot_results = 
+  central_park_df |> 
+  modelr::bootstrap(n = 5000) |> 
+  mutate(
+    models = map(strap, \(df) lm(tmax ~ tmin + prcp, data = df)),
+    glance_results = map(models, broom::glance),
+    tidy_results = map(models, broom::tidy)
+  )
+
+r_squared = 
+  boot_results |> 
+  select(.id, glance_results) |> 
+  unnest(glance_results) |> 
+  select(.id, r.squared)
+
+beta_ratio = 
+  boot_results |> 
+  select(.id, tidy_results) |> 
+  unnest(tidy_results) |> 
+  select(.id, term, estimate) |> 
+  pivot_wider(
+    names_from = term,
+    values_from = estimate
+  ) |> 
+  mutate(
+    beta1_beta2 = tmin / prcp
+  ) |> 
+  select(.id, beta1_beta2)
+
+bootstrap_estimates = 
+  left_join(r_squared, beta_ratio, by = ".id")
+
+```
+
+```{r}
+bootstrap_estimates |> 
+  ggplot(aes(x = r.squared)) +
+  geom_density(fill = "steelblue", alpha = 0.5) +
+  labs(
+    title = "Distribution of Bootstrap R-squared Estimates (Central Park)",
+    x = "R-squared",
+    y = "Density"
+  ) +
+  theme_minimal()
+
+bootstrap_estimates |> 
+  ggplot(aes(x = beta1_beta2)) +
+  geom_density(fill = "coral", alpha = 0.5) +
+  labs(
+    title = "Distribution of Bootstrap β1 hat/ β2 hat Estimates (Central Park)",
+    x = "β1 hat/ β2 hat",
+    y = "Density"
+  ) +
+  theme_minimal()
+
+bootstrap_estimates |> 
+  summarize(
+    r2_ci_lower = quantile(r.squared, 0.025),
+    r2_ci_upper = quantile(r.squared, 0.975),
+    beta_ratio_ci_lower = quantile(beta1_beta2, 0.025, na.rm = TRUE),
+    beta_ratio_ci_upper = quantile(beta1_beta2, 0.975, na.rm = TRUE)
+  ) |> 
+  knitr::kable(digits = 4)
+```
+
