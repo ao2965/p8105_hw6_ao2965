@@ -97,13 +97,13 @@ bootstrap_estimates |>
   knitr::kable(digits = 4)
 ```
 
-* The distribution of r2 values is approximately normal and symmetric, centered around 0.91. This indicates that the linear regression model with tmin and prcp as predictors consistently explains a high proportion of the variance in tmax across bootstrap samples. The 95% confidence interval for r2 is (0.8945, 0.9279).
+* The distribution of r2 values is approximately normal and symmetric with slight left skew. This indicates that the linear regression model with tmin and prcp as predictors consistently explains a high proportion of the variance in tmax across bootstrap samples. The 95% confidence interval for r2 is (0.8945, 0.9279).
 
-* 
+* The distribution of β1 hat/ β2 hat is heavily left skewed with a long tail, reflecting instability in the ratio when the coefficient for precipitation β2 hat is close to zero in some bootstrap samples. This produces extreme values and a much wider, asymmetric distribution compared to r2. The 95% confidence interval for β1 hat/ β2 hat is (-5580.673, 4481.925).
 
 # Problem 3
 ### loading and cleaning data
-```{r}
+```{r, message = FALSE}
 birthweight_df = 
   read_csv("birthweight (1).csv") |> 
   janitor::clean_names() |> 
@@ -130,7 +130,10 @@ birthweight_df |>
   growth, resulting in lower birthweights. 
 * mrace: Mother's race to show racial differences in birthweight outcomes.
 * ppbmi: Mother's pre-pregnancy BMI reflects nutritional/health status
-* smoken: Smoking during pregnancy is a well-established risk factor for low birthweight
+* smoken: Smoking during pregnancy is a well-established risk factor for low birthweight.
+
+### Model processing:
+* I then created a residuals vs. fitted values plot using add_predictions() and add_residuals(), which showed relatively random scatter around zero, suggesting the model assumptions are reasonably met. Results are below.
 
 ### proposed model
 ```{r}
@@ -159,7 +162,8 @@ birthweight_df |>
   ) +
   theme_minimal()
 ```
-* The residual plot shows a random scatter.
+
+* The residual plot shows a random scatter. Since the scatter is around zero, we can state that the relationship is a linear one.
 
 ## Comparison Models and Cross-Validation
 ```{r}
@@ -206,7 +210,7 @@ cv_results |>
   labs(
     title = "Cross-Validated Prediction Error Comparison",
     x = "Model",
-    y = "RMSE (grams)"
+    y = "RMSE"
   ) +
   theme_minimal() +
   theme(legend.position = "none")
